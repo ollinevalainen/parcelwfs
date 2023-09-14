@@ -1,11 +1,12 @@
-    """
-    Interface to get field parcel data from Finnish Food Authority (Ruokavirasto)
-    Author: Olli Nevalainen, Finnish Meteorological Institute
-    """
+"""
+Interface to get field parcel data from Finnish Food Authority (Ruokavirasto)
+Author: Olli Nevalainen, Finnish Meteorological Institute
+"""
 
 import geopandas as gpd
-from requests import Request
+import requests
 from typing import List, Optional
+from urllib.error import HTTPError
 from shapely.geometry import Point
 from pyproj import Transformer
 from owslib.wfs import WebFeatureService
@@ -34,15 +35,26 @@ def get_available_field_parcel_years():
 
 def _get_field_parcel(query_filter:str, year: int) -> gpd.GeoDataFrame:
 
+    years_available = get_available_field_parcel_years()
+    if year not in years_available:
+        raise ValueError(f"""Field parcel layer not available for year {year}. Currently
+                         available years: {years_available}""")
+    
     layer_name = f"{FIELD_PARCEL_LAYER_BASENAME}{year}"
     params = dict(service='WFS', version="2.0.0", request='GetFeature',
         typeName=layer_name, cql_filter=query_filter, outputFormat='json')
 
     # Parse the URL with parameters
-    wfs_request_url = Request("GET",FINNISH_FOOD_AUTHORITY_WFS, params=params).prepare().url
+    wfs_request_url = requests.Request("GET",FINNISH_FOOD_AUTHORITY_WFS, params=params).prepare().url
 
     # Read data from URL
-    gdf = gpd.read_file(wfs_request_url)
+    try:
+        gdf = gpd.read_file(wfs_request_url)
+        if gdf.empty:
+            print(f"No field parcel with given query parameters: {params}.")
+            return None
+    except HTTPError as err:
+        raise Exception("Possibly invalid parcel id.") from err
     return gdf
 
 
