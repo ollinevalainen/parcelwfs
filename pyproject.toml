@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "ruokavirasto-wfs"
+version = "0.1.0"
+description = ""
+authors = ["Olli Nevalainen <olli.nevalainen.fmi@gmail.com>"]
+readme = "README.md"
+packages = [{include = "ruokavirasto_wfs"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+geopandas = "^0.13.2"
+pyproj = "^3.6.0"
+OWSLib = "^0.29.2"
+shapely = "^2.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
