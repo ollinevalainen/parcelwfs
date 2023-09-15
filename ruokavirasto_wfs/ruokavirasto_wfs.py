@@ -17,17 +17,17 @@ FIELD_PARCEL_ID_PROPERTY = "PERUSLOHKOTUNNUS"
 FIELD_PARCEL_SPECIES_ID_FI = "KASVIKOODI"
 FIELD_PARCEL_SPECIES_DESCRIPTION_FI = "KASVIKOODI_SELITE_FI"
 
-def get_available_layers():
+def get_available_layers() -> list:
     wfs = WebFeatureService(url=FINNISH_FOOD_AUTHORITY_WFS, version="2.0.0")
     return list(wfs.contents)
 
-def get_available_parcel_layers():
+def get_available_parcel_layers() -> list:
     all_layers = get_available_layers()
     field_parcel_layers = [layer for layer in all_layers if FIELD_PARCEL_LAYER_BASENAME in layer]
     return field_parcel_layers
 
 
-def get_available_parcel_years():
+def get_available_parcel_years() -> list:
     field_parcel_layers = get_available_parcel_layers()
     years_available = [int(layer.split(".")[-1]) for layer in field_parcel_layers]
     return years_available
@@ -90,7 +90,7 @@ def get_parcels_by_parcel_id(parcel_ids: List[str], year: int) -> gpd.GeoDataFra
     return gdf
 
 
-def get_parcel_species(lat:float , lon:float, year: Optional[int]=None):
+def get_parcel_species(lat:float , lon:float, year: Optional[int]=None) -> dict:
 
     if year:
         years = [year]
