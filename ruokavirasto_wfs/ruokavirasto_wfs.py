@@ -72,7 +72,8 @@ def _get_parcel(query_filter: str, year: int) -> gpd.GeoDataFrame:
 
 
 def get_parcel_by_parcel_id(parcel_id: str, year: int) -> gpd.GeoDataFrame:
-    query_filter = f"{FIELD_PARCEL_ID_PROPERTY}={parcel_id}"
+    # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
+    query_filter = f"{FIELD_PARCEL_ID_PROPERTY}='{parcel_id}'"
     # Read data from URL
     gdf = _get_parcel(query_filter, year)
     return gdf
@@ -130,6 +131,9 @@ def get_parcel_species_by_parcel_id(parcel_id: str, year: Optional[int] = None) 
     species_information = {}
     for year in years:
         gdf = get_parcel_by_parcel_id(parcel_id, year)
+        if gdf is None:
+            print(f"No parcel with parcel id {parcel_id} for year {year}.")
+            continue
         species_information[year] = {
             "parcel_id": gdf[FIELD_PARCEL_ID_PROPERTY][0],
             "species_code_FI": gdf[FIELD_PARCEL_SPECIES_ID_FI][0],
