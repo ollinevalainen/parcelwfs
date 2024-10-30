@@ -1,18 +1,33 @@
-**Interface for Finnish Food Authority's (Ruokavirasto) field parcel data**
+# Interface for Finnish Food Authority's (Ruokavirasto) field parcel data
 
-Example usage:
+Functions to retrieve data from the Finnish Food Authority's (Ruokavirasto) WFS service: https://inspire.ruokavirasto-awsa.com/geoserver/wfs?request=getcapabilities
+
+## Installation using pip
+
+```console
+pip install git+https://github.com/ollinevalainen/ruokavirasto_wfs.git
+```
+
+
+## Example usage
 ````python
 import ruokavirasto_wfs as ruokawfs
-# Qvidja eddy-covariance field
 lat = 60.2942642
 lon = 22.3908939
 year = 2022
+multiple_years = [2022,2023]
 
-gdf_parcel = ruokawfs.get_parcel_by_lat_lon(lat, lon, year)
-species_dict = ruokawfs.get_parcel_species(lat, lon, year)
+parcel = ruokawfs.get_parcel_by_lat_lon(lat, lon, year)
+species_per_year = ruokawfs.get_parcel_species_by_lat_lon(lat, lon, multiple_years)
 ````
-Some other useful functions:
+**Some other useful functions:**
 
-`get_available_parcel_years()` for a list of available years.
+* `get_available_parcel_years()` for a list of available years.
 
-`get_parcel_by_parcel_id(parcel_id, year)`, where `parcel_id` is a Finnish field parcel ID (PERUSLOHKOTUNNUS).
+* `get_parcels_by_reference_parcel_id(reference_parcel_id, year)`, where 
+`reference:parcel_id` is a Finnish reference parcel ID (PERUSLOHKOTUNNUS).
+Function returns all agricultural parcels(kasvulohko) within that reference parcel at that year.
+
+## TODO
+* Add docstrings and documentation
+* Make tests that won't break in the future when the test years are no longer available
