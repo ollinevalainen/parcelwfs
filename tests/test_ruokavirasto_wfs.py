@@ -98,3 +98,21 @@ class TestRuokavirastoWFS:
             species_information["reference_parcel_id"]
             == qvidja_ec_reference_parcel_id_2023
         )
+
+    def test_get_reference_parcel_by_reference_parcel_id(self):
+        parcel = ruokawfs.get_reference_parcel_by_reference_parcel_id(
+            qvidja_ec_reference_parcel_id_2023, 2023
+        )
+        assert isinstance(parcel, pd.Series)
+        assert (
+            parcel[ruokawfs.AgriParcelProperty.REFERENCE_PARCEL_ID]
+            == qvidja_ec_reference_parcel_id_2023
+        )
+
+    def test_get_reference_parcel_by_lat_lon(self):
+        parcel = ruokawfs.get_reference_parcel_by_lat_lon(lat, lon, year)
+        assert isinstance(parcel, pd.Series)
+        assert (
+            parcel[ruokawfs.AgriParcelProperty.REFERENCE_PARCEL_ID]
+            == qvidja_ec_reference_parcel_id_2023
+        )

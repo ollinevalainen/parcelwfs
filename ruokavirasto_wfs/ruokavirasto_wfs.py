@@ -10,13 +10,18 @@ from enum import Enum
 from typing import Optional, Union, List
 from urllib.error import HTTPError
 from shapely.geometry import Point
-from pyproj import Transformer
+from pyproj import Transformer, CRS
 from owslib.wfs import WebFeatureService
 
 FINNISH_FOOD_AUTHORITY_WFS = "https://inspire.ruokavirasto-awsa.com/geoserver/wfs"
 AGRICULTURAL_PARCEL_LAYER_BASENAME = (
     "inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel."
 )
+
+
+class WFSLayer(str, Enum):
+    AGRICULTURAL_PARCEL = "inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel"
+    REFERENCE_PARCEL = "inspire:LC.LandCoverSurfaces.LPIS"
 
 
 class AgriParcelProperty(str, Enum):
@@ -48,7 +53,7 @@ def get_available_parcel_years() -> list:
     return years_available
 
 
-def query(query_filter: str, year: int) -> gpd.GeoDataFrame:
+def query(query_filter: str, year: int, layer: WFSLayer) -> gpd.GeoDataFrame:
     years_available = get_available_parcel_years()
     if year not in years_available:
         raise ValueError(
@@ -56,7 +61,7 @@ def query(query_filter: str, year: int) -> gpd.GeoDataFrame:
                          available years: {years_available}"""
         )
 
-    layer_name = f"{AGRICULTURAL_PARCEL_LAYER_BASENAME}{year}"
+    layer_name = f"{layer}.{year}"
     params = dict(
         service="WFS",
         version="2.0.0",
@@ -83,18 +88,21 @@ def query(query_filter: str, year: int) -> gpd.GeoDataFrame:
 
 
 def get_parcels_by_reference_parcel_id(
-    reference_parcel_id: str, year: int
+    reference_parcel_id: str, year: int, output_crs: Optional[CRS] = "epsg:3067"
 ) -> gpd.GeoDataFrame:
     # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
     query_filter = (
         f"{AgriParcelProperty.REFERENCE_PARCEL_ID.value}='{reference_parcel_id}'"
     )
     # Read data from URL
-    gdf = query(query_filter, year)
+    gdf = query(query_filter, year, WFSLayer.AGRICULTURAL_PARCEL)
+    gdf = gdf.to_crs(crs=output_crs)
     return gdf
 
 
-def get_parcel_by_parcel_id(agri_parcel_id: str, year: int) -> pd.Series:
+def get_parcel_by_parcel_id(
+    agri_parcel_id: str, year: int, output_crs: Optional[CRS] = "epsg:3067"
+) -> pd.Series:
     """
 
     Parameters
@@ -112,7 +120,7 @@ def get_parcel_by_parcel_id(agri_parcel_id: str, year: int) -> pd.Series:
         f"AND {AgriParcelProperty.PARCEL_NUMBER.value}='{parcel_number}'"
     )
     # Read data from URL
-    gdf = query(query_filter, year)
+    gdf = query(query_filter, year, WFSLayer.AGRICULTURAL_PARCEL)
     if gdf is None:
         print(
             f"No field parcel for year {year} with given query parameters:"
@@ -120,27 +128,71 @@ def get_parcel_by_parcel_id(agri_parcel_id: str, year: int) -> pd.Series:
         )
         return None
     else:
+        gdf = gdf.to_crs(crs=output_crs)
         return gdf.iloc[0]
 
 
-def get_parcel_by_point3067(point_in_epsg3067: Point, year: int) -> pd.Series:
+def get_parcel_by_point3067(
+    point_in_epsg3067: Point,
+    year: int,
+    layer: WFSLayer,
+    output_crs: Optional[CRS] = "epsg:3067",
+) -> pd.Series:
     x = point_in_epsg3067.x
     y = point_in_epsg3067.y
     spatial_filter = f"Intersects(geom,POINT ({x} {y}))"
     # Read data from URL
-    gdf = query(spatial_filter, year)
+    gdf = query(spatial_filter, year, layer)
     if gdf.empty:
         print(f"No field parcel with given query parameters: {spatial_filter}.")
         return None
     else:
+        gdf = gdf.to_crs(crs=output_crs)
         return gdf.iloc[0]
 
 
-def get_parcel_by_lat_lon(lat: float, lon: float, year: int) -> pd.Series:
+def point3067_from_lat_lon(lat: float, lon: float) -> Point:
     transformer_to_3067 = Transformer.from_crs("epsg:4326", "epsg:3067")
     x, y = transformer_to_3067.transform(lat, lon)
     point = Point(x, y)
-    parcel = get_parcel_by_point3067(point, year)
+    return point
+
+
+def get_parcel_by_lat_lon(
+    lat: float, lon: float, year: int, output_crs: Optional[CRS] = "epsg:3067"
+) -> pd.Series:
+    point = point3067_from_lat_lon(lat, lon)
+    parcel = get_parcel_by_point3067(
+        point, year, WFSLayer.AGRICULTURAL_PARCEL, output_crs
+    )
+    return parcel
+
+
+def get_reference_parcel_by_reference_parcel_id(
+    reference_parcel_id: str, year: int, output_crs: Optional[CRS] = "epsg:3067"
+) -> pd.Series:
+    # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
+    query_filter = (
+        f"{AgriParcelProperty.REFERENCE_PARCEL_ID.value}='{reference_parcel_id}'"
+    )
+    # Read data from URL
+    gdf = query(query_filter, year, WFSLayer.REFERENCE_PARCEL)
+    if gdf.empty:
+        print(
+            f"No field parcel for year {year} with given query parameters:"
+            f"{query_filter}."
+        )
+        return None
+    else:
+        gdf = gdf.to_crs(crs=output_crs)
+        return gdf.iloc[0]
+
+
+def get_reference_parcel_by_lat_lon(
+    lat: float, lon: float, year: int, output_crs: Optional[CRS] = "epsg:3067"
+) -> pd.Series:
+    point = point3067_from_lat_lon(lat, lon)
+    parcel = get_parcel_by_point3067(point, year, WFSLayer.REFERENCE_PARCEL, output_crs)
     return parcel
 
 
