@@ -6,9 +6,19 @@ Author: Olli Nevalainen, Finnish Meteorological Institute
 import requests
 import pandas as pd
 import geopandas as gpd
-from enum import Enum
 from typing import Optional, Union, List
 from urllib.error import HTTPError
+
+try:
+    # breaking change introduced in python 3.11
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
+
 from shapely.geometry import Point
 from pyproj import Transformer, CRS
 from owslib.wfs import WebFeatureService
@@ -19,12 +29,12 @@ AGRICULTURAL_PARCEL_LAYER_BASENAME = (
 )
 
 
-class WFSLayer(str, Enum):
+class WFSLayer(StrEnum):
     AGRICULTURAL_PARCEL = "inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel"
     REFERENCE_PARCEL = "inspire:LC.LandCoverSurfaces.LPIS"
 
 
-class AgriParcelProperty(str, Enum):
+class AgriParcelProperty(StrEnum):
     ID = "id"
     YEAR = "VUOSI"
     REFERENCE_PARCEL_ID = "PERUSLOHKOTUNNUS"
