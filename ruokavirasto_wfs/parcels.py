@@ -26,9 +26,9 @@ class MergingCriteria(StrEnum):
 
 
 class Parcel:
-    def __init__(self, parcel_id: str, year: int):
+    def __init__(self, parcel_id: str):
         self.parcel_id = parcel_id
-        self.year = year
+        self.year = int(parcel_id.split(PARCEL_SEP)[0])
         reference_parcel, agri_parcel_numbers = self.extract_parcels_from_parcel_id(
             parcel_id
         )
@@ -41,13 +41,10 @@ class Parcel:
         self.geometry = None
 
     @classmethod
-    def get_parcels_from_ruokawfs_gdf(
-        cls, gdf: gpd.GeoDataFrame, year: int
-    ) -> list["Parcel"]:
-
+    def get_parcels_from_ruokawfs_gdf(cls, gdf: gpd.GeoDataFrame) -> list["Parcel"]:
         parcels = []
         for _, agri_parcel in gdf.iterrows():
-            parcel = cls(agri_parcel.parcel_id, year)
+            parcel = cls(agri_parcel.parcel_id)
             parcel.geometry = agri_parcel.geometry
             parcels.append(parcel)
         return parcels
@@ -60,7 +57,7 @@ class Parcel:
             reference_parcel_id, year, output_crs=4326
         )
         gdf_agri_parcels = add_parcel_id(gdf_agri_parcels)
-        parcels = cls.get_parcels_from_ruokawfs_gdf(gdf_agri_parcels, year)
+        parcels = cls.get_parcels_from_ruokawfs_gdf(gdf_agri_parcels)
         return parcels
 
     @classmethod
@@ -80,14 +77,14 @@ class Parcel:
         ).to_crs(epsg=4326)
 
         gdf_merged = add_parcel_id(gdf_merged, gdf_agri_parcels)
-        parcels = cls.get_parcels_from_ruokawfs_gdf(gdf_merged, year)
+        parcels = cls.get_parcels_from_ruokawfs_gdf(gdf_merged)
         return parcels
 
     @staticmethod
     def extract_parcels_from_parcel_id(parcel_id: str):
         parcels_str = parcel_id.split(PARCEL_SEP)
-        reference_parcel = parcels_str[0]
-        agri_parcel_numbers = parcels_str[1:] if len(parcels_str) > 1 else []
+        reference_parcel = parcels_str[1]
+        agri_parcel_numbers = parcels_str[2:] if len(parcels_str) > 1 else []
         if isinstance(agri_parcel_numbers, str):
             agri_parcel_numbers = [agri_parcel_numbers]
         return reference_parcel, agri_parcel_numbers
@@ -100,8 +97,8 @@ class Parcel:
         else:
             geometries = []
             for agri_parcel_id in self.agri_parcel_ids:
-                agri_parcel = ruokawfs.get_parcel_by_parcel_id(
-                    agri_parcel_id, self.year, output_crs=4326
+                agri_parcel = ruokawfs.get_parcel_by_agri_parcel_id(
+                    agri_parcel_id, year=self.year, output_crs=4326
                 )
                 geometries.append(agri_parcel.geometry)
             self.geometry = shapely.union_all(geometries)
@@ -112,14 +109,17 @@ def add_parcel_id(
 ):
     parcel_ids = []
     for _, agri_parcel in gdf_merged.iterrows():
-
         merged_parcel_idxs = getattr(agri_parcel, MERGED_GEOM_PROPERTY, None)
         reference_parcel_id = getattr(
             agri_parcel, AgriParcelProperty.REFERENCE_PARCEL_ID
         )
+        year = getattr(agri_parcel, AgriParcelProperty.YEAR)
+
         if not merged_parcel_idxs:
             parcel_number = getattr(agri_parcel, AgriParcelProperty.PARCEL_NUMBER)
-            parcel_id = f"{reference_parcel_id}" f"{PARCEL_SEP}" f"{parcel_number}"
+            parcel_id = (
+                f"{year}{PARCEL_SEP}{reference_parcel_id}{PARCEL_SEP}{parcel_number}"
+            )
         else:
             # Check that the original gdf is given
             if gdf_original is None:
@@ -134,7 +134,9 @@ def add_parcel_id(
                 ].astype("string")
             )
             merged_ids = PARCEL_SEP.join(parcel_numbers)
-            parcel_id = f"{reference_parcel_id}" f"{PARCEL_SEP}" f"{merged_ids}"
+            parcel_id = (
+                f"{year}{PARCEL_SEP}{reference_parcel_id}{PARCEL_SEP}{merged_ids}"
+            )
         parcel_ids.append(parcel_id)
 
     gdf_merged.loc[:, "parcel_id"] = parcel_ids
@@ -146,7 +148,6 @@ def keep_equal_values(x):
 
 
 def merge_to_single_parts(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-
     gdf_union = gdf.dissolve(aggfunc=keep_equal_values)
     gdf_single_parts = gdf_union.explode(index_parts=False).reset_index(drop=True)
     return gdf_single_parts
@@ -155,7 +156,6 @@ def merge_to_single_parts(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def merge_by_shortest_boundary(
     candidate: pd.Series, targets: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
-
     new_targets = targets.copy(deep=True)
     merged_geometries = new_targets.geometry.apply(
         lambda x: shapely.union(candidate.geometry, x)
@@ -178,7 +178,6 @@ def merge_by_shortest_boundary(
 def merge_by_longest_intersection(
     candidate: pd.Series, targets: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
-
     new_targets = targets.copy(deep=True)
     intersections = new_targets.geometry.apply(
         lambda x: shapely.intersection(candidate.geometry, x)
@@ -283,7 +282,6 @@ def split_by_rule(
     min_area: Optional[float] = None,
     min_width: Optional[float] = None,
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
-
     if min_area is not None:
         gdf_lt_area, gdf_ge_area = split_by_min_area(gdf, min_area)
     if min_width is not None:
@@ -309,7 +307,6 @@ def merge_geometries(
     min_width: Optional[float] = None,
     merging_criteria: Optional[MergingCriteria] = MergingCriteria.SHORTEST_BOUNDARY,
 ) -> gpd.GeoDataFrame:
-
     if min_area is None and min_width is None:
         raise ValueError("Either min_area, min_width or both should be given")
 
@@ -346,5 +343,5 @@ def merge_geometries(
     gdf_lt, _ = split_by_rule(gdf_updated, min_area, min_width)
 
     if not gdf_lt.empty:
-        print("These geometries are still less then threshold:" f"{gdf_lt.index}")
+        print(f"These geometries are still less then threshold:{gdf_lt.index}")
     return gdf_updated

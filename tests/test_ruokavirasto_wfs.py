@@ -39,7 +39,6 @@ lon = polygon.centroid.x
 
 
 class TestRuokavirastoWFS:
-
     def test_get_parcels_by_reference_parcel_id(self):
         parcels = ruokawfs.get_parcels_by_reference_parcel_id(
             qvidja_ec_reference_parcel_id_2023, year
@@ -51,11 +50,14 @@ class TestRuokavirastoWFS:
         )
 
     def test_get_parcel_by_parcel_id(self):
-        parcel = ruokawfs.get_parcel_by_parcel_id(qvidja_ec_agri_parcel_id_2023, year)
+        parcel = ruokawfs.get_parcel_by_agri_parcel_id(
+            qvidja_ec_agri_parcel_id_2023, 2023
+        )
         assert isinstance(parcel, pd.Series)
-        parcel[ruokawfs.AgriParcelProperty.REFERENCE_PARCEL_ID][
-            0
-        ] == qvidja_ec_reference_parcel_id_2023
+        assert (
+            parcel[ruokawfs.AgriParcelProperty.REFERENCE_PARCEL_ID]
+            == qvidja_ec_reference_parcel_id_2023
+        )
 
     def test_get_parcel_by_lat_lon(self):
         parcel = ruokawfs.get_parcel_by_lat_lon(lat, lon, year)
@@ -74,21 +76,11 @@ class TestRuokavirastoWFS:
             == qvidja_ec_reference_parcel_id_2023
         )
 
-    def test_get_parcel_species_by_parcel_id(self):
-        species_per_year = ruokawfs.get_parcel_species_by_parcel_id(
+    def test_get_parcel_species_by_agri_parcel_id(self):
+        species_per_year = ruokawfs.get_parcel_species_by_agri_parcel_id(
             qvidja_ec_agri_parcel_id_2023, year
         )
         assert isinstance(species_per_year, dict)
-        assert year in species_per_year
-
-    def test_get_parcel_species_by_parcel_id_multi_year(self):
-        species_per_year = ruokawfs.get_parcel_species_by_parcel_id(
-            qvidja_ec_agri_parcel_id_2023, multiple_years
-        )
-        assert isinstance(species_per_year, dict)
-        # In year the test field had different agri_parcel_id
-        assert 2022 not in species_per_year
-        assert 2023 in species_per_year
 
     def test_species_information_from_parcel(self):
         parcel = self.test_get_parcel_by_lat_lon()
@@ -114,5 +106,15 @@ class TestRuokavirastoWFS:
         assert isinstance(parcel, pd.Series)
         assert (
             parcel[ruokawfs.AgriParcelProperty.REFERENCE_PARCEL_ID]
+            == qvidja_ec_reference_parcel_id_2023
+        )
+
+    def test_species_information_for_reference_parcel_id(self):
+        species_information = ruokawfs.species_information_for_reference_parcel_id(
+            qvidja_ec_reference_parcel_id_2023, 2023
+        )
+        assert isinstance(species_information, dict)
+        assert (
+            species_information["reference_parcel_id"]
             == qvidja_ec_reference_parcel_id_2023
         )

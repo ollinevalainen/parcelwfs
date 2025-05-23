@@ -23,6 +23,8 @@ from shapely.geometry import Point
 from pyproj import Transformer, CRS
 from owslib.wfs import WebFeatureService
 
+PARCEL_SEP = "-"
+
 FINNISH_FOOD_AUTHORITY_WFS = "https://inspire.ruokavirasto-awsa.com/geoserver/wfs"
 AGRICULTURAL_PARCEL_LAYER_BASENAME = (
     "inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel."
@@ -42,6 +44,17 @@ class AgriParcelProperty(StrEnum):
     SPECIES_DESCRIPTION = "KASVIKOODI_SELITE_FI"
     AREA = "PINTA_ALA"
     PARCEL_NUMBER = "LOHKONUMERO"
+
+
+class ReferenceParcelProperty(StrEnum):
+    ID = "id"
+    YEAR = "VUOSI"
+    REFERENCE_PARCEL_ID = "PERUSLOHKOTUNNUS"
+    ORGANIC_FARMING = "LUOMUVILJELY"
+    SLOPED_AREA = "KALTEVA_ALA"
+    GROUNDWATER_AREA = "POHJAVESI_ALA"
+    NATURA_AREA = "NATURA_ALA"
+    AREA = "PINTA_ALA"
 
 
 def get_available_layers() -> list:
@@ -110,7 +123,7 @@ def get_parcels_by_reference_parcel_id(
     return gdf
 
 
-def get_parcel_by_parcel_id(
+def get_parcel_by_agri_parcel_id(
     agri_parcel_id: str, year: int, output_crs: Optional[CRS] = "epsg:3067"
 ) -> pd.Series:
     """
@@ -122,8 +135,9 @@ def get_parcel_by_parcel_id(
     year : int
         Agricultural parcel for this year.
     """
-    reference_parcel_id = agri_parcel_id.split("-")[0]
-    parcel_number = agri_parcel_id.split("-")[1]
+    agri_parcel_id_split = agri_parcel_id.split(PARCEL_SEP)
+    reference_parcel_id = agri_parcel_id_split[0]
+    parcel_number = agri_parcel_id_split[1]
     # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
     query_filter = (
         f"{AgriParcelProperty.REFERENCE_PARCEL_ID.value}='{reference_parcel_id}' "
@@ -230,39 +244,62 @@ def get_parcel_species_by_lat_lon(
     return species_information
 
 
-def get_parcel_species_by_parcel_id(
-    agri_parcel_id: str, year: Optional[Union[int, List[int]]] = None
-) -> dict:
+def get_parcel_species_by_agri_parcel_id(agri_parcel_id: str, year: int) -> dict | None:
     """
 
     Parameters
     ----------
     agri_parcel_id : str
         Agricultural parcel ID of form '{REFERENCE_PARCEL_ID}-{PARCEL_NUMBER}'.
-    year : int
-        Agricultural parcel for this year.
+
     """
 
-    years = _handle_year_input(year)
-
-    species_information = {}
-    for year in years:
-        parcel = get_parcel_by_parcel_id(agri_parcel_id, year)
-        if parcel is not None:
-            species_information[year] = species_information_from_parcel(parcel)
-
-    return species_information
+    parcel = get_parcel_by_agri_parcel_id(agri_parcel_id, year)
+    if parcel is not None:
+        return species_information_from_parcel(parcel)
+    else:
+        print(
+            f"No field parcel with given query parameters: {agri_parcel_id}."
+            f" Please check the parcel ID format."
+        )
+        return None
 
 
 def species_information_from_parcel(agri_parcel: pd.Series) -> dict:
-    agri_parcel_id = (
-        f"{agri_parcel[AgriParcelProperty.REFERENCE_PARCEL_ID]}-"
+    parcel_id = (
+        f"{agri_parcel[AgriParcelProperty.YEAR]}{PARCEL_SEP}"
+        f"{agri_parcel[AgriParcelProperty.REFERENCE_PARCEL_ID]}{PARCEL_SEP}"
         f"{agri_parcel[AgriParcelProperty.PARCEL_NUMBER]}"
     )
     species_information = {
-        "parcel_id": agri_parcel_id,
+        "parcel_id": parcel_id,
         "reference_parcel_id": agri_parcel[AgriParcelProperty.REFERENCE_PARCEL_ID],
         "species_code_FI": agri_parcel[AgriParcelProperty.SPECIES_CODE],
         "species_description_FI": agri_parcel[AgriParcelProperty.SPECIES_DESCRIPTION],
+    }
+    return species_information
+
+
+def species_information_for_reference_parcel_id(
+    reference_parcel_id: str, year: int
+) -> dict | None:
+    agri_parcels = get_parcels_by_reference_parcel_id(reference_parcel_id, year)
+    if agri_parcels is None:
+        print(f"No field parcel with given query parameters: {reference_parcel_id}.")
+        return None
+
+    max_area_species_info = (
+        agri_parcels.groupby(
+            [AgriParcelProperty.SPECIES_CODE, AgriParcelProperty.SPECIES_DESCRIPTION]
+        )[[AgriParcelProperty.AREA]]
+        .sum()
+        .idxmax()
+    )
+    parcel_id = f"{year}{PARCEL_SEP}{reference_parcel_id}"
+    species_information = {
+        "parcel_id": parcel_id,
+        "reference_parcel_id": reference_parcel_id,
+        "species_code_FI": max_area_species_info.iloc[0][0],
+        "species_description_FI": max_area_species_info.iloc[0][1],
     }
     return species_information
