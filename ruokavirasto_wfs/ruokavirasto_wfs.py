@@ -119,6 +119,12 @@ def get_parcels_by_reference_parcel_id(
     )
     # Read data from URL
     gdf = query(query_filter, year, WFSLayer.AGRICULTURAL_PARCEL)
+    if gdf is None or gdf.empty:
+        print(
+            f"No field parcel for year {year} with given query parameters:"
+            f"{query_filter}."
+        )
+        return None
     gdf = gdf.to_crs(crs=output_crs)
     return gdf
 
@@ -201,7 +207,7 @@ def get_reference_parcel_by_reference_parcel_id(
     )
     # Read data from URL
     gdf = query(query_filter, year, WFSLayer.REFERENCE_PARCEL)
-    if gdf.empty:
+    if gdf is None or gdf.empty:
         print(
             f"No field parcel for year {year} with given query parameters:"
             f"{query_filter}."
