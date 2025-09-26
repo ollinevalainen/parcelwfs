@@ -1,7 +1,7 @@
 import shapely
 import pandas as pd
 import geopandas as gpd
-import ruokavirasto_wfs as ruokawfs
+import parcelwfs
 
 try:
     # breaking change introduced in python 3.11
@@ -13,7 +13,10 @@ except ImportError:
         pass
 
 
-from ruokavirasto_wfs import AgriParcelProperty
+# TODO TODO CONTINUE FROM HERE:
+# rename module
+# how to change AgriParcelProperty to generic?
+from parcelwfs.parcelwfs import AgriParcelProperty
 from typing import Optional
 
 PARCEL_SEP = "-"
@@ -41,7 +44,7 @@ class Parcel:
         self.geometry = None
 
     @classmethod
-    def get_parcels_from_ruokawfs_gdf(cls, gdf: gpd.GeoDataFrame) -> list["Parcel"]:
+    def get_parcels_from_parcelwfs_gdf(cls, gdf: gpd.GeoDataFrame) -> list["Parcel"]:
         parcels = []
         for _, agri_parcel in gdf.iterrows():
             parcel = cls(agri_parcel.parcel_id)
@@ -53,11 +56,11 @@ class Parcel:
     def get_parcels_from_reference_parcel_id(
         cls, reference_parcel_id: str, year: int
     ) -> list["Parcel"]:
-        gdf_agri_parcels = ruokawfs.get_parcels_by_reference_parcel_id(
+        gdf_agri_parcels = parcelwfs.get_parcels_by_reference_parcel_id(
             reference_parcel_id, year, output_crs=4326
         )
         gdf_agri_parcels = add_parcel_id(gdf_agri_parcels)
-        parcels = cls.get_parcels_from_ruokawfs_gdf(gdf_agri_parcels)
+        parcels = cls.get_parcels_from_parcelwfs_gdf(gdf_agri_parcels)
         return parcels
 
     @classmethod
@@ -68,7 +71,7 @@ class Parcel:
         min_area: Optional[float] = None,
         min_width: Optional[float] = None,
     ) -> list["Parcel"]:
-        gdf_agri_parcels = ruokawfs.get_parcels_by_reference_parcel_id(
+        gdf_agri_parcels = parcelwfs.get_parcels_by_reference_parcel_id(
             reference_parcel_id, year
         )
 
@@ -77,7 +80,7 @@ class Parcel:
         ).to_crs(epsg=4326)
 
         gdf_merged = add_parcel_id(gdf_merged, gdf_agri_parcels)
-        parcels = cls.get_parcels_from_ruokawfs_gdf(gdf_merged)
+        parcels = cls.get_parcels_from_parcelwfs_gdf(gdf_merged)
         return parcels
 
     @staticmethod
@@ -91,13 +94,13 @@ class Parcel:
 
     def get_parcel_geometry(self):
         if not self.agri_parcel_ids:
-            self.geometry = ruokawfs.get_reference_parcel_by_reference_parcel_id(
+            self.geometry = parcelwfs.get_reference_parcel_by_reference_parcel_id(
                 self.reference_parcel_id, self.year, output_crs=4326
             ).geometry
         else:
             geometries = []
             for agri_parcel_id in self.agri_parcel_ids:
-                agri_parcel = ruokawfs.get_parcel_by_agri_parcel_id(
+                agri_parcel = parcelwfs.get_parcel_by_agri_parcel_id(
                     agri_parcel_id, year=self.year, output_crs=4326
                 )
                 geometries.append(agri_parcel.geometry)
@@ -130,7 +133,7 @@ def add_parcel_id(
             parcel_numbers = list(
                 gdf_original.loc[
                     merged_parcel_idxs,
-                    ruokawfs.AgriParcelProperty.PARCEL_NUMBER,
+                    parcelwfs.AgriParcelProperty.PARCEL_NUMBER,
                 ].astype("string")
             )
             merged_ids = PARCEL_SEP.join(parcel_numbers)

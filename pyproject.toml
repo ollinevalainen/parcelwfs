@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "ruokavirasto-wfs"
+name = "parcelwfs"
 version = "0.1.0"
 description = ""
 authors = ["Olli Nevalainen <olli.nevalainen.fmi@gmail.com>"]
 readme = "README.md"
-packages = [{include = "ruokavirasto_wfs"}]
+packages = [{include = "parcelwfs"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4"
@@ -12,6 +12,7 @@ geopandas = ">=0.13.2"
 pyproj = ">=3.6.0"
 OWSLib = ">=0.29.2"
 shapely = ">=2.0.1"
+pydantic = "^2.11.9"
 
 
 [tool.poetry.group.dev.dependencies]
