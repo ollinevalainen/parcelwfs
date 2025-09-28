@@ -1,4 +1,4 @@
-from .wfs import (
+from .parcelwfs import (
     AgriParcelProperty,
     get_parcels_by_reference_parcel_id,
     get_parcel_by_agri_parcel_id,
