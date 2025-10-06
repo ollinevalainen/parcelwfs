@@ -1,8 +1,10 @@
 id: FI
-endpoint: https://inspire.ruokavirasto-awsa.com/geoserver/wfs
+endpoints: 
+  gsaa: https://inspire.ruokavirasto-awsa.com/geoserver/wfs
+  lpis: https://inspire.ruokavirasto-awsa.com/geoserver/wfs
 layers:
-  gsaa: inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel
-  lpis: inspire:LC.LandCoverSurfaces.LPIS
+  gsaa: inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel.
+  lpis: inspire:LC.LandCoverSurfaces.LPIS.
 gsaa_properties:
     id: id
     year: VUOSI

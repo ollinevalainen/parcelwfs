@@ -1,0 +1,21 @@
+id: DK
+endpoints:
+  gsaa: https://geodata.fvm.dk/geoserver/Marker/wfs
+  lpis: https://geodata.fvm.dk/geoserver/Markblokke/wfs
+layers:
+  gsaa: Marker:Marker_
+  lpis: Markblokke:Markblokke_
+gsaa_properties:
+    id: id
+    year: 
+    lpis_parcel_id: Markblok
+    species_code: Afgkode
+    species_description: Afgroede
+    area: IMK_areal
+    gsaa_parcel_name: Marknr
+lpis_properties:
+    id: id
+    year:
+    lpis_parcel_id: MARKBLOKKERNR
+    area: GB_AREAL
+wfs_version: 2.0.0

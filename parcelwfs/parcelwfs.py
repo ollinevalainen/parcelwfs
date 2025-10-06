@@ -6,7 +6,7 @@ Author: Olli Nevalainen, Finnish Meteorological Institute
 import logging
 import requests
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import geopandas as gpd
 from urllib.error import HTTPError
 from pathlib import Path
@@ -51,24 +51,32 @@ class WFSLayers(BaseModel):
     lpis: str
 
 
+class Endpoints(BaseModel):
+    gsaa: str
+    lpis: str
+
+
 class GSAAPropertyMapping(BaseModel):
     id: str
-    year: str
+    year: str | None
     lpis_parcel_id: str
     species_code: str
     species_description: str
     area: str
     gsaa_parcel_name: str  # TODO Naming ok?
 
+    @field_validator("year", mode="before")
+    @classmethod
+    def set_year_default(cls, v):
+        if v is None:
+            return "year"  # or any default value
+        return v
+
 
 class LPISPropertyMapping(BaseModel):
     id: str
-    year: str
+    year: str | None
     lpis_parcel_id: str
-    # organic_farming: int
-    # sloped_area: float
-    # groundwater_area: float
-    # natura_area: float
     area: str
 
 
@@ -95,7 +103,7 @@ class LPISPropertyMapping(BaseModel):
 
 class ParcelWFS(BaseModel):
     id: str
-    endpoint: str
+    endpoints: Endpoints
     layers: WFSLayers
     gsaa_properties: GSAAPropertyMapping
     lpis_properties: LPISPropertyMapping
@@ -112,26 +120,22 @@ class ParcelWFS(BaseModel):
         parcel_wfs_definition_file = Path(__file__).parent / f"{parcelwfs_id}.yaml"
         return cls.from_yaml(parcel_wfs_definition_file)
 
-    def get_available_layers(self) -> list:
-        wfs = WebFeatureService(url=self.endpoint, version=self.wfs_version)
+    def get_available_layers(self, parcel_type: ParcelType) -> list:
+        wfs = WebFeatureService(
+            url=getattr(self.endpoints, parcel_type.value), version=self.wfs_version
+        )
         return list(wfs.contents)
 
     def get_available_parcel_layers(
         self, parcel_type: ParcelType = ParcelType.GSAA
     ) -> list | None:
-        all_layers = self.get_available_layers()
-        if parcel_type == ParcelType.GSAA:
-            field_parcel_layers = [
-                layer for layer in all_layers if self.layers.gsaa in layer
-            ]
-        elif parcel_type == ParcelType.LPIS:
-            field_parcel_layers = [
-                layer for layer in all_layers if self.layers.lpis in layer
-            ]
-        else:
-            err_msg = f"Unknown parcel type {parcel_type}."
-            logger.error(err_msg)
-            return None
+        all_layers = self.get_available_layers(parcel_type=parcel_type)
+
+        field_parcel_layers = [
+            layer
+            for layer in all_layers
+            if getattr(self.layers, parcel_type.value) in layer
+        ]
 
         return field_parcel_layers
 
@@ -142,7 +146,33 @@ class ParcelWFS(BaseModel):
         if not field_parcel_layers:
             return None
         else:
-            return [int(layer.split(".")[-1]) for layer in field_parcel_layers]
+            return [
+                int(layer.split(getattr(self.layers, parcel_type.value))[-1])
+                for layer in field_parcel_layers
+            ]
+
+    def handle_output(
+        self,
+        gdf: gpd.GeoDataFrame | None,
+        year: int,
+        to_series: bool,
+        output_crs: CRS | None,
+    ) -> gpd.GeoDataFrame | pd.Series | None:
+        if gdf is None or gdf.empty:
+            return None
+        if output_crs is not None:
+            gdf = gdf.to_crs(crs=output_crs)
+
+        # Add year column if not present
+        if (
+            self.gsaa_properties.year not in gdf.columns
+            or self.lpis_properties.year not in gdf.columns
+        ):
+            gdf["year"] = year
+        if to_series:
+            return gdf.iloc[0]
+        else:
+            return gdf
 
     def query(
         self, query_filter: str, year: int, parcel_type: ParcelType
@@ -153,14 +183,7 @@ class ParcelWFS(BaseModel):
                 f"""Field parcel layer not available for year {year}. Currently
                             available years: {years_available}"""
             )
-        if parcel_type == ParcelType.GSAA:
-            layer_name = f"{self.layers.gsaa}.{year}"
-        elif parcel_type == ParcelType.LPIS:
-            layer_name = f"{self.layers.lpis}.{year}"
-        else:
-            err_msg = f"Unknown parcel type {parcel_type}."
-            logger.error(err_msg)
-            return None
+        layer_name = f"{getattr(self.layers, parcel_type.value)}{year}"
 
         params = dict(
             service="WFS",
@@ -173,7 +196,11 @@ class ParcelWFS(BaseModel):
 
         # Parse the URL with parameters
         wfs_request_url = (
-            requests.Request("GET", self.endpoint, params=params).prepare().url
+            requests.Request(
+                "GET", getattr(self.endpoints, parcel_type.value), params=params
+            )
+            .prepare()
+            .url
         )
 
         # Read data from URL
@@ -191,20 +218,11 @@ class ParcelWFS(BaseModel):
     def get_gsaa_parcels_by_lpis_parcel_id(
         self, lpis_parcel_id: str, year: int, output_crs: CRS | None = None
     ) -> gpd.GeoDataFrame | None:
-
         # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
         query_filter = f"{self.gsaa_properties.lpis_parcel_id}='{lpis_parcel_id}'"
         # Read data from URL
         gdf = self.query(query_filter, year, ParcelType.GSAA)
-        if gdf is None or gdf.empty:
-            print(
-                f"No field parcel for year {year} with given query parameters:"
-                f"{query_filter}."
-            )
-            return None
-        if output_crs is not None:
-            gdf = gdf.to_crs(crs=output_crs)
-        return gdf
+        return self.handle_output(gdf, year, to_series=False, output_crs=output_crs)
 
     def get_gsaa_parcel_by_id(
         self, gsaa_parcel_id: str, year: int, output_crs: CRS | None = None
@@ -228,16 +246,7 @@ class ParcelWFS(BaseModel):
         )
         # Read data from URL
         gdf = self.query(query_filter, year, ParcelType.GSAA)
-        if gdf is None:
-            logger.info(
-                f"No field parcel for year {year} with given query parameters:"
-                f"{query_filter}."
-            )
-            return None
-        else:
-            if output_crs is not None:
-                gdf = gdf.to_crs(crs=output_crs)
-            return gdf.iloc[0]
+        return self.handle_output(gdf, year, to_series=True, output_crs=output_crs)
 
     def get_parcel_by_point(
         self,
@@ -251,15 +260,7 @@ class ParcelWFS(BaseModel):
         spatial_filter = f"Intersects(geom,POINT ({x} {y}))"
         # Read data from URL
         gdf = self.query(spatial_filter, year, parcel_type)
-        if gdf.empty:
-            logger.info(
-                f"No field parcel with given query parameters: {spatial_filter}."
-            )
-            return None
-        else:
-            if output_crs is not None:
-                gdf = gdf.to_crs(crs=output_crs)
-            return gdf.iloc[0]
+        return self.handle_output(gdf, year, to_series=True, output_crs=output_crs)
 
     @staticmethod
     def point_in_source_crs_from_lat_lon(
@@ -277,16 +278,11 @@ class ParcelWFS(BaseModel):
                 f"""Field parcel layer not available for year {year}. Currently
                             available years: {years_available}"""
             )
-        if parcel_type == ParcelType.GSAA:
-            layer_name = f"{self.layers.gsaa}.{year}"
-        elif parcel_type == ParcelType.LPIS:
-            layer_name = f"{self.layers.lpis}.{year}"
-        else:
-            err_msg = f"Unknown parcel type {parcel_type}."
-            logger.error(err_msg)
-            return None
+        layer_name = f"{getattr(self.layers, parcel_type.value)}{year}"
 
-        wfs = WebFeatureService(url=self.endpoint, version=self.wfs_version)
+        wfs = WebFeatureService(
+            url=getattr(self.endpoints, parcel_type.value), version=self.wfs_version
+        )
         layer_crs = wfs.contents[layer_name].crsOptions[0]
         crs = CRS.from_user_input(layer_crs.id)
         return crs
@@ -307,16 +303,7 @@ class ParcelWFS(BaseModel):
         query_filter = f"{self.lpis_properties.lpis_parcel_id}='{lpis_parcel_id}'"
         # Read data from URL
         gdf = self.query(query_filter, year, ParcelType.LPIS)
-        if gdf is None or gdf.empty:
-            logger.info(
-                f"No field parcel for year {year} with given query parameters:"
-                f"{query_filter}."
-            )
-            return None
-        else:
-            if output_crs is not None:
-                gdf = gdf.to_crs(crs=output_crs)
-            return gdf.iloc[0]
+        return self.handle_output(gdf, year, to_series=True, output_crs=output_crs)
 
     def get_lpis_parcel_by_lat_lon(
         self, lat: float, lon: float, year: int, output_crs: CRS | None = None
@@ -365,6 +352,10 @@ class ParcelWFS(BaseModel):
         """
 
         parcel = self.get_gsaa_parcel_by_id(gsaa_parcel_id, year)
+
+        if self.gsaa_properties.year not in parcel:
+            parcel[self.gsaa_properties.year] = year
+
         if parcel is not None:
             return self.species_information_from_gsaa_parcel(parcel)
         else:
