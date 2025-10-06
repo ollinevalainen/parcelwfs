@@ -3,13 +3,13 @@ Interface to get field parcel data from Finnish Food Authority (Ruokavirasto)
 Author: Olli Nevalainen, Finnish Meteorological Institute
 """
 
-import json
 import logging
 import requests
 import pandas as pd
 from pydantic import BaseModel
 import geopandas as gpd
 from urllib.error import HTTPError
+from pathlib import Path
 
 try:
     # breaking change introduced in python 3.11
@@ -21,6 +21,7 @@ except ImportError:
         pass
 
 
+import yaml
 from shapely.geometry import Point
 from pyproj import Transformer, CRS
 from owslib.wfs import WebFeatureService
@@ -52,23 +53,23 @@ class WFSLayers(BaseModel):
 
 class GSAAPropertyMapping(BaseModel):
     id: str
-    year: int
+    year: str
     lpis_parcel_id: str
     species_code: str
     species_description: str
-    area: float
+    area: str
     gsaa_parcel_name: str  # TODO Naming ok?
 
 
 class LPISPropertyMapping(BaseModel):
     id: str
-    year: int
+    year: str
     lpis_parcel_id: str
     # organic_farming: int
     # sloped_area: float
     # groundwater_area: float
     # natura_area: float
-    area: float
+    area: str
 
 
 # class AgriParcelProperty(StrEnum):
@@ -93,7 +94,7 @@ class LPISPropertyMapping(BaseModel):
 
 
 class ParcelWFS(BaseModel):
-    country_id: str
+    id: str
     endpoint: str
     layers: WFSLayers
     gsaa_properties: GSAAPropertyMapping
@@ -101,10 +102,15 @@ class ParcelWFS(BaseModel):
     wfs_version: str = "2.0.0"  # Not sure if even works with versions < 2.0.0
 
     @classmethod
-    def from_json(cls, file_path: str) -> "ParcelWFS":
+    def from_yaml(cls, file_path: str) -> "ParcelWFS":
         with open(file_path, "r", encoding="utf-8") as fp:
-            json_data = json.load(fp)
-        return ParcelWFS.model_validate(json_data)
+            yaml_data = yaml.safe_load(fp)
+        return ParcelWFS.model_validate(yaml_data)
+
+    @classmethod
+    def get_by_id(cls, parcelwfs_id: str) -> "ParcelWFS":
+        parcel_wfs_definition_file = Path(__file__).parent / f"{parcelwfs_id}.yaml"
+        return cls.from_yaml(parcel_wfs_definition_file)
 
     def get_available_layers(self) -> list:
         wfs = WebFeatureService(url=self.endpoint, version=self.wfs_version)
@@ -189,7 +195,7 @@ class ParcelWFS(BaseModel):
         # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
         query_filter = f"{self.gsaa_properties.lpis_parcel_id}='{lpis_parcel_id}'"
         # Read data from URL
-        gdf = self.query(query_filter, year, self.layers.gsaa)
+        gdf = self.query(query_filter, year, ParcelType.GSAA)
         if gdf is None or gdf.empty:
             print(
                 f"No field parcel for year {year} with given query parameters:"
@@ -218,10 +224,10 @@ class ParcelWFS(BaseModel):
         # Need to single quote the parcel id, otherwise won't work with parcel IDs starting with 0
         query_filter = (
             f"{self.gsaa_properties.lpis_parcel_id}='{lpis_parcel_id}' "
-            f"AND {self.gsaa_properties.parcel_name}='{gsaa_parcel_name}'"
+            f"AND {self.gsaa_properties.gsaa_parcel_name}='{gsaa_parcel_name}'"
         )
         # Read data from URL
-        gdf = self.query(query_filter, year, self.layers.gsaa)
+        gdf = self.query(query_filter, year, ParcelType.GSAA)
         if gdf is None:
             logger.info(
                 f"No field parcel for year {year} with given query parameters:"
@@ -282,7 +288,7 @@ class ParcelWFS(BaseModel):
 
         wfs = WebFeatureService(url=self.endpoint, version=self.wfs_version)
         layer_crs = wfs.contents[layer_name].crsOptions[0]
-        crs = CRS.from_user_input(layer_crs)
+        crs = CRS.from_user_input(layer_crs.id)
         return crs
 
     def get_gsaa_parcel_by_lat_lon(

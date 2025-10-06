@@ -1,3 +1,4 @@
+import logging
 import shapely
 import pandas as pd
 import geopandas as gpd
@@ -13,10 +14,8 @@ except ImportError:
         pass
 
 
-# TODO TODO CONTINUE FROM HERE:
-# rename module
-# how to change AgriParcelProperty to generic?
-from parcelwfs.parcelwfs import AgriParcelProperty
+logger = logging.getLogger(__name__)
+
 from typing import Optional
 
 PARCEL_SEP = "-"
@@ -29,121 +28,164 @@ class MergingCriteria(StrEnum):
 
 
 class Parcel:
-    def __init__(self, parcel_id: str):
+    def __init__(
+        self,
+        parcel_id: str,
+        parcelwfs_id: str | None = None,
+        wfs: parcelwfs.ParcelWFS | None = None,
+        crs_int: int = 4326,
+    ):
         self.parcel_id = parcel_id
+
+        self.wfs = self.validate_parcelwfs_input(parcelwfs_id, wfs)
+
         self.year = int(parcel_id.split(PARCEL_SEP)[0])
-        reference_parcel, agri_parcel_numbers = self.extract_parcels_from_parcel_id(
+        lpis_parcel, gsaa_parcel_names = self.extract_lpis_and_gsaa_from_parcel_id(
             parcel_id
         )
-        self.reference_parcel_id = reference_parcel
-        self.agri_parcel_numbers = agri_parcel_numbers
-        self.agri_parcel_ids = [
-            f"{self.reference_parcel_id}{PARCEL_SEP}{parcel_number}"
-            for parcel_number in self.agri_parcel_numbers
+        self.lpis_parcel_id = lpis_parcel
+        self.gsaa_parcel_names = gsaa_parcel_names
+        self.gsaa_parcel_ids = [
+            f"{self.lpis_parcel_id}{PARCEL_SEP}{parcel_number}"
+            for parcel_number in self.gsaa_parcel_names
         ]
         self.geometry = None
+        self.crs_int = crs_int
+
+    @staticmethod
+    def validate_parcelwfs_input(
+        parcelwfs_id: str | None, wfs: parcelwfs.ParcelWFS | None
+    ):
+        if parcelwfs_id is None and wfs is None:
+            err_msg = "Either parcelwfs_id or parcelwfs must be given"
+            logger.error(err_msg)
+            raise ValueError(err_msg)
+        if parcelwfs_id is not None and wfs is not None:
+            err_msg = "Only one of parcelwfs_id or parcelwfs must be given"
+            logger.error(err_msg)
+            raise ValueError(err_msg)
+        if wfs is None:
+            return parcelwfs.ParcelWFS.get_by_id(parcelwfs_id)
+        else:
+            return wfs
 
     @classmethod
-    def get_parcels_from_parcelwfs_gdf(cls, gdf: gpd.GeoDataFrame) -> list["Parcel"]:
+    def get_parcels_from_wfs_gdf(
+        cls, gdf: gpd.GeoDataFrame, wfs: parcelwfs.ParcelWFS
+    ) -> list["Parcel"]:
         parcels = []
-        for _, agri_parcel in gdf.iterrows():
-            parcel = cls(agri_parcel.parcel_id)
-            parcel.geometry = agri_parcel.geometry
+        for _, gsaa_parcel in gdf.iterrows():
+            parcel = cls(gsaa_parcel.parcel_id, wfs=wfs)
+            parcel.geometry = gsaa_parcel.geometry
             parcels.append(parcel)
         return parcels
 
     @classmethod
-    def get_parcels_from_reference_parcel_id(
-        cls, reference_parcel_id: str, year: int
+    def get_gsaa_parcels_by_lpis_parcel_id(
+        cls,
+        lpis_parcel_id: str,
+        year: int,
+        parcelwfs_id: str,
+        wfs: parcelwfs.ParcelWFS,
+        crs_int: int = 4326,
     ) -> list["Parcel"]:
-        gdf_agri_parcels = parcelwfs.get_parcels_by_reference_parcel_id(
-            reference_parcel_id, year, output_crs=4326
+        wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
+
+        gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(
+            lpis_parcel_id, year, output_crs=crs_int
         )
-        gdf_agri_parcels = add_parcel_id(gdf_agri_parcels)
-        parcels = cls.get_parcels_from_parcelwfs_gdf(gdf_agri_parcels)
-        return parcels
+        gdf_gsaa_parcels = cls.add_parcel_id(wfs, gdf_gsaa_parcels)
+        gsaa_parcels = cls.get_parcels_from_wfs_gdf(gdf_gsaa_parcels, wfs)
+        return gsaa_parcels
 
     @classmethod
-    def get_merged_parcels_from_referennce_parcel_id(
+    def get_merged_gsaa_parcels_from_lpis_parcel_id(
         cls,
-        reference_parcel_id: str,
+        lpis_parcel_id: str,
         year: int,
-        min_area: Optional[float] = None,
-        min_width: Optional[float] = None,
+        parcelwfs_id: str | None = None,
+        wfs: parcelwfs.ParcelWFS | None = None,
+        min_area: float | None = None,
+        min_width: float | None = None,
+        crs_int: int = 4326,
     ) -> list["Parcel"]:
-        gdf_agri_parcels = parcelwfs.get_parcels_by_reference_parcel_id(
-            reference_parcel_id, year
-        )
 
-        gdf_merged = merge_geometries(
-            gdf_agri_parcels, min_area=min_area, min_width=min_width
-        ).to_crs(epsg=4326)
+        wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
+        gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(lpis_parcel_id, year)
 
-        gdf_merged = add_parcel_id(gdf_merged, gdf_agri_parcels)
-        parcels = cls.get_parcels_from_parcelwfs_gdf(gdf_merged)
-        return parcels
+        gdf_merged_gsaa = merge_geometries(
+            gdf_gsaa_parcels, min_area=min_area, min_width=min_width
+        ).to_crs(epsg=crs_int)
+
+        gdf_merged_gsaa = cls.add_parcel_id(wfs, gdf_merged_gsaa, gdf_gsaa_parcels)
+        merged_gsaa_parcels = cls.get_parcels_from_wfs_gdf(gdf_merged_gsaa, wfs)
+        return merged_gsaa_parcels
 
     @staticmethod
-    def extract_parcels_from_parcel_id(parcel_id: str):
+    def extract_lpis_and_gsaa_from_parcel_id(parcel_id: str):
         parcels_str = parcel_id.split(PARCEL_SEP)
-        reference_parcel = parcels_str[1]
-        agri_parcel_numbers = parcels_str[2:] if len(parcels_str) > 1 else []
-        if isinstance(agri_parcel_numbers, str):
-            agri_parcel_numbers = [agri_parcel_numbers]
-        return reference_parcel, agri_parcel_numbers
+        lpis_parcel = parcels_str[1]
+        gsaa_parcel_names = parcels_str[2:] if len(parcels_str) > 1 else []
+        if isinstance(gsaa_parcel_names, str):
+            gsaa_parcel_names = [gsaa_parcel_names]
+        return lpis_parcel, gsaa_parcel_names
 
     def get_parcel_geometry(self):
-        if not self.agri_parcel_ids:
-            self.geometry = parcelwfs.get_reference_parcel_by_reference_parcel_id(
-                self.reference_parcel_id, self.year, output_crs=4326
+        if not self.gsaa_parcel_ids:
+            self.geometry = self.wfs.get_lpis_parcel_by_id(
+                self.lpis_parcel_id, self.year, output_crs=self.crs_int
             ).geometry
         else:
             geometries = []
-            for agri_parcel_id in self.agri_parcel_ids:
-                agri_parcel = parcelwfs.get_parcel_by_agri_parcel_id(
-                    agri_parcel_id, year=self.year, output_crs=4326
+            for gsaa_parcel_id in self.gsaa_parcel_ids:
+                gsaa_parcel = self.wfs.get_gsaa_parcel_by_id(
+                    gsaa_parcel_id, year=self.year, output_crs=self.crs_int
                 )
-                geometries.append(agri_parcel.geometry)
+                geometries.append(gsaa_parcel.geometry)
             self.geometry = shapely.union_all(geometries)
 
+    @staticmethod
+    def add_parcel_id(
+        wfs: parcelwfs.ParcelWFS,
+        gdf_merged: gpd.GeoDataFrame,
+        gdf_original: Optional[gpd.GeoDataFrame] = None,
+    ):
+        parcel_ids = []
+        gsaa_properties = wfs.gsaa_properties
 
-def add_parcel_id(
-    gdf_merged: gpd.GeoDataFrame, gdf_original: Optional[gpd.GeoDataFrame] = None
-):
-    parcel_ids = []
-    for _, agri_parcel in gdf_merged.iterrows():
-        merged_parcel_idxs = getattr(agri_parcel, MERGED_GEOM_PROPERTY, None)
-        reference_parcel_id = getattr(
-            agri_parcel, AgriParcelProperty.REFERENCE_PARCEL_ID
-        )
-        year = getattr(agri_parcel, AgriParcelProperty.YEAR)
+        for _, gsaa_parcel in gdf_merged.iterrows():
+            merged_parcel_idxs = getattr(gsaa_parcel, MERGED_GEOM_PROPERTY, None)
+            lpis_parcel_id = getattr(gsaa_parcel, gsaa_properties.lpis_parcel_id)
+            year = getattr(gsaa_parcel, gsaa_properties.year)
 
-        if not merged_parcel_idxs:
-            parcel_number = getattr(agri_parcel, AgriParcelProperty.PARCEL_NUMBER)
-            parcel_id = (
-                f"{year}{PARCEL_SEP}{reference_parcel_id}{PARCEL_SEP}{parcel_number}"
-            )
-        else:
-            # Check that the original gdf is given
-            if gdf_original is None:
-                raise ValueError(
-                    "Original GeoDataFrame is needed to get the original parcel numbers"
-                    "for merged parcels."
+            if not merged_parcel_idxs:
+                parcel_name = getattr(gsaa_parcel, gsaa_properties.gsaa_parcel_name)
+                parcel_id = (
+                    f"{year}{PARCEL_SEP}{lpis_parcel_id}{PARCEL_SEP}{parcel_name}"
                 )
-            parcel_numbers = list(
-                gdf_original.loc[
-                    merged_parcel_idxs,
-                    parcelwfs.AgriParcelProperty.PARCEL_NUMBER,
-                ].astype("string")
-            )
-            merged_ids = PARCEL_SEP.join(parcel_numbers)
-            parcel_id = (
-                f"{year}{PARCEL_SEP}{reference_parcel_id}{PARCEL_SEP}{merged_ids}"
-            )
-        parcel_ids.append(parcel_id)
+            else:
+                # Check that the original gdf is given
+                if gdf_original is None:
+                    err_msg = (
+                        "Original GeoDataFrame is needed to get the original parcel numbers"
+                        "for merged parcels."
+                    )
+                    logger.error(err_msg)
+                    raise ValueError(err_msg)
+                parcel_names = list(
+                    gdf_original.loc[
+                        merged_parcel_idxs,
+                        gsaa_properties.gsaa_parcel_name,
+                    ].astype("string")
+                )
+                merged_ids = PARCEL_SEP.join(parcel_names)
+                parcel_id = (
+                    f"{year}{PARCEL_SEP}{lpis_parcel_id}{PARCEL_SEP}{merged_ids}"
+                )
+            parcel_ids.append(parcel_id)
 
-    gdf_merged.loc[:, "parcel_id"] = parcel_ids
-    return gdf_merged
+        gdf_merged.loc[:, "parcel_id"] = parcel_ids
+        return gdf_merged
 
 
 def keep_equal_values(x):
@@ -210,13 +252,13 @@ def get_contained_indices(
 def add_merged_geometries_property(
     gdf_merged: gpd.GeoDataFrame, gdf_original: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
-    gdf_merged.loc[:, "merged_geometries"] = None
+    gdf_merged.loc[:, MERGED_GEOM_PROPERTY] = None
     for idx in gdf_merged.index:
         merged_geometries = get_contained_indices(
             gdf_original, gdf_merged.loc[idx, "geometry"]
         )
         if len(merged_geometries) > 1:
-            gdf_merged.at[idx, "merged_geometries"] = list(merged_geometries)
+            gdf_merged.at[idx, MERGED_GEOM_PROPERTY] = list(merged_geometries)
     return gdf_merged
 
 
@@ -254,7 +296,7 @@ def update_index(
     gdf_cp = gdf.copy(deep=True)
     new_index = []
     for idx in gdf_cp.index:
-        if gdf.loc[idx, "merged_geometries"] is None:
+        if gdf.loc[idx, MERGED_GEOM_PROPERTY] is None:
             new_index.append(idx)
         else:
             new_index.append(current_max_idx + 1)
@@ -311,7 +353,9 @@ def merge_geometries(
     merging_criteria: Optional[MergingCriteria] = MergingCriteria.SHORTEST_BOUNDARY,
 ) -> gpd.GeoDataFrame:
     if min_area is None and min_width is None:
-        raise ValueError("Either min_area, min_width or both should be given")
+        err_msg = "Either min_area or min_width must be given"
+        logger.error(err_msg)
+        raise ValueError(err_msg)
 
     gdf_lt, gdf_ge = split_by_rule(gdf, min_area, min_width)
 
@@ -346,5 +390,5 @@ def merge_geometries(
     gdf_lt, _ = split_by_rule(gdf_updated, min_area, min_width)
 
     if not gdf_lt.empty:
-        print(f"These geometries are still less then threshold:{gdf_lt.index}")
+        logger.info(f"These geometries are still less than threshold:{gdf_lt.index}")
     return gdf_updated

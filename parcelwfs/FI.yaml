@@ -1,0 +1,19 @@
+id: FI
+endpoint: https://inspire.ruokavirasto-awsa.com/geoserver/wfs
+layers:
+  gsaa: inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel
+  lpis: inspire:LC.LandCoverSurfaces.LPIS
+gsaa_properties:
+    id: id
+    year: VUOSI
+    lpis_parcel_id: PERUSLOHKOTUNNUS
+    species_code: KASVIKOODI
+    species_description: KASVIKOODI_SELITE_FI
+    area: PINTA_ALA
+    gsaa_parcel_name: LOHKONUMERO
+lpis_properties:
+    id: id
+    year: VUOSI
+    lpis_parcel_id: PERUSLOHKOTUNNUS
+    area: PINTA_ALA
+wfs_version: 2.0.0
