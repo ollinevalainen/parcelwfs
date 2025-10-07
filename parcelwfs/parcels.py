@@ -3,6 +3,7 @@ import shapely
 import pandas as pd
 import geopandas as gpd
 import parcelwfs
+from parcelwfs.parcelwfs import PARCEL_SEP
 
 try:
     # breaking change introduced in python 3.11
@@ -18,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 from typing import Optional
 
-PARCEL_SEP = "-"
 MERGED_GEOM_PROPERTY = "merged_geometries"
 
 
@@ -109,7 +109,6 @@ class Parcel:
         min_width: float | None = None,
         crs_int: int = 4326,
     ) -> list["Parcel"]:
-
         wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
         gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(lpis_parcel_id, year)
 

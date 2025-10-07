@@ -4,10 +4,6 @@ from shapely.geometry import Polygon
 import parcelwfs
 
 
-test_year = 2023
-test_multiple_years = [2022, 2023]
-
-
 fi_country = "FI"
 fi_polygon = Polygon(
     [
@@ -35,31 +31,31 @@ fi_polygon = Polygon(
         [22.3913931, 60.295311],
     ]
 )
+fi_year = 2023
 fi_lpis_parcel_id_2023 = "5730455963"
-fi_gsaa_parcel_id_2023 = "5730455963-2"
+fi_gsaa_parcel_id_2023 = "5730455963/2"
 fi_lat = fi_polygon.centroid.y
 fi_lon = fi_polygon.centroid.x
 
 dk_code = "DK"
+dk_year = 2024
 dk_polygon = None
 dk_lpis_parcel_id = "725173-38"
-dk_gsaa_parcel_id = "1-0"
-dk_lat = 6173722
-dk_lon = 725310.0
+dk_gsaa_parcel_id = "725173-38/1-0"
+dk_lat = 55.65707964
+dk_lon = 12.58154275
 
 
 test_data = {
     "FI": {
-        "year": test_year,
-        "multiple_years": test_multiple_years,
+        "year": fi_year,
         "lpis_parcel_id": fi_lpis_parcel_id_2023,
         "gsaa_parcel_id": fi_gsaa_parcel_id_2023,
         "lat": fi_lat,
         "lon": fi_lon,
     },
     "DK": {
-        "year": test_year,
-        "multiple_years": test_multiple_years,
+        "year": dk_year,
         "lpis_parcel_id": dk_lpis_parcel_id,
         "gsaa_parcel_id": dk_gsaa_parcel_id,
         "lat": dk_lat,
@@ -129,7 +125,7 @@ class TestParcelWFS:
                 == test_data[country]["lpis_parcel_id"]
             )
 
-    def test_get_parcel_species_by_agri_parcel_id(self):
+    def test_get_parcel_species_by_gsaa_parcel_id(self):
         for country in self.test_countries:
             wfs = parcelwfs.ParcelWFS.get_by_id(country)
             species_per_year = wfs.get_gsaa_parcel_species_by_gsaa_parcel_id(
@@ -137,7 +133,7 @@ class TestParcelWFS:
             )
             assert isinstance(species_per_year, dict)
             assert (
-                species_per_year[test_data[country]["year"]]["lpis_parcel_id"]
+                species_per_year["lpis_parcel_id"]
                 == test_data[country]["lpis_parcel_id"]
             )
 

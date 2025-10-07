@@ -8,6 +8,7 @@ import requests
 import pandas as pd
 from pydantic import BaseModel, field_validator
 import geopandas as gpd
+import numpy as np
 from urllib.error import HTTPError
 from pathlib import Path
 
@@ -28,7 +29,7 @@ from owslib.wfs import WebFeatureService
 
 logger = logging.getLogger(__name__)
 
-PARCEL_SEP = "-"
+PARCEL_SEP = "/"
 
 # FINNISH_FOOD_AUTHORITY_WFS = "https://inspire.ruokavirasto-awsa.com/geoserver/wfs"
 # AGRICULTURAL_PARCEL_LAYER_BASENAME = (
@@ -64,6 +65,7 @@ class GSAAPropertyMapping(BaseModel):
     species_description: str
     area: str
     gsaa_parcel_name: str  # TODO Naming ok?
+    geometry: str
 
     @field_validator("year", mode="before")
     @classmethod
@@ -78,6 +80,7 @@ class LPISPropertyMapping(BaseModel):
     year: str | None
     lpis_parcel_id: str
     area: str
+    geometry: str
 
 
 # class AgriParcelProperty(StrEnum):
@@ -206,13 +209,22 @@ class ParcelWFS(BaseModel):
         # Read data from URL
         try:
             gdf = gpd.read_file(wfs_request_url)
-            if gdf.empty:
-                logger.info(f"No field parcel with given query parameters: {params}.")
+
+        except UnicodeDecodeError:
+            logger.debug("UnicodeDecodeError caught, trying with different encoding.")
+            try:
+                gdf = gpd.read_file(wfs_request_url, encoding="latin-1")
+            except Exception as err:
+                logger.error(f"Error reading WFS response with latin-1 encoding: {err}")
                 return None
         except HTTPError as err:
             err_msg = "Error when querying WFS with URL. Possibly invalid parcel id."
             logger.error(err_msg)
             raise Exception(err_msg) from err
+        finally:
+            if gdf.empty:
+                logger.info(f"No field parcel with given query parameters: {params}.")
+                return None
         return gdf
 
     def get_gsaa_parcels_by_lpis_parcel_id(
@@ -257,7 +269,12 @@ class ParcelWFS(BaseModel):
     ) -> pd.Series:
         x = point_in_wfs_crs.x
         y = point_in_wfs_crs.y
-        spatial_filter = f"Intersects(geom,POINT ({x} {y}))"
+        geom_property = (
+            self.gsaa_properties.geometry
+            if parcel_type == ParcelType.GSAA
+            else self.lpis_properties.geometry
+        )
+        spatial_filter = f"Intersects({geom_property},POINT ({x} {y}))"
         # Read data from URL
         gdf = self.query(spatial_filter, year, parcel_type)
         return self.handle_output(gdf, year, to_series=True, output_crs=output_crs)
@@ -268,6 +285,11 @@ class ParcelWFS(BaseModel):
     ) -> Point:
         transformer_to_source_crs = Transformer.from_crs("epsg:4326", source_crs)
         x, y = transformer_to_source_crs.transform(lat, lon)
+        # Check if coordinates are not NaN or infinite
+        if np.isnan(x) or np.isnan(y) or np.isinf(x) or np.isinf(y):
+            err_msg = f"Invalid coordinates after transformation: {x}, {y}"
+            logger.error(err_msg)
+            raise ValueError(err_msg)
         point = Point(x, y)
         return point
 
