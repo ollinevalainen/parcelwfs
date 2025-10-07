@@ -2,6 +2,8 @@
 
 Functions to retrieve agricultural parcel data from national GSAA (Geospatial Aid applications) and LPIS (Land Parcel Identification System) WFS services. Currently implement for Finland and Denmark, but can be extended to other countries with similar services.
 
+This package was extended from Finland only package ruokavirasto_wfs (https://github.com/ollinevalainen/ruokavirasto_wfs).
+
 ## Installation using pip
 
 ```console
@@ -90,8 +92,10 @@ wfs = parcelwfs.ParcelWFS.model_validate(
     }
 )
 ```
+## parcels module
+The `parcels` module provides the `Parcel` class, which can be used to retrieve and manipulate parcel data. You can get GSAA parcels by LPIS parcel ID, and merge parcels based on area and width criteria. The original purpose of this module was to merge small GSAA parcels into larger ones in order to retrieve satellite imagery.
 
 ## TODO
-* Improve documentation
+* Improve documentation and create API reference
 * Test parcels with Danish data
 * Add more countries
