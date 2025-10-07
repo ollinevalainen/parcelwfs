@@ -1,3 +1,28 @@
+"""
+Parcel manipulation and merging utilities for agricultural field parcels.
+
+This module provides classes and functions for working with agricultural field parcels,
+including parcel geometry manipulation, merging small parcels based on area or width
+criteria, and handling relationships between LPIS (Land Parcel Identification System)
+and GSAA (Geospatial Aid Applications) parcels.
+
+Classes
+-------
+MergingCriteria : StrEnum
+    Enumeration of criteria for merging parcels.
+Parcel : class
+    Represents a field parcel with geometry and metadata.
+
+Functions
+---------
+merge_geometries : Merge small parcels based on area and/or width thresholds.
+merge_to_single_parts : Dissolve and explode geometries to single parts.
+merge_by_shortest_boundary : Merge parcels by shortest resulting boundary.
+merge_by_longest_intersection : Merge parcels by longest shared intersection.
+
+Author: Olli Nevalainen, Finnish Meteorological Institute
+"""
+
 import logging
 import shapely
 import pandas as pd
@@ -29,6 +54,49 @@ class MergingCriteria(StrEnum):
 
 
 class Parcel:
+    """
+    Represents an agricultural field parcel with geometry and metadata.
+
+    A Parcel can represent either an LPIS parcel or one or more GSAA parcels.
+    Parcel IDs are formatted as: {YEAR}/{LPIS_PARCEL_ID}/{GSAA_PARCEL_NAME(S)}.
+
+    Parameters
+    ----------
+    parcel_id : str
+        Full parcel identifier in format: year/lpis_id/gsaa_name(s).
+    parcelwfs_id : str, optional
+        Country code identifier to load the appropriate ParcelWFS configuration.
+        Either parcelwfs_id or wfs must be provided.
+    wfs : parcelwfs.ParcelWFS, optional
+        Pre-configured ParcelWFS instance. Either parcelwfs_id or wfs must be provided.
+    crs_int : int, default=4326
+        EPSG code for the coordinate reference system to use for geometries.
+
+    Attributes
+    ----------
+    parcel_id : str
+        The full parcel identifier.
+    wfs : parcelwfs.ParcelWFS
+        The WFS service instance for querying parcel data.
+    year : int
+        Year extracted from the parcel_id.
+    lpis_parcel_id : str
+        LPIS parcel identifier.
+    gsaa_parcel_names : list
+        List of GSAA parcel names within the LPIS parcel.
+    gsaa_parcel_ids : list
+        List of full GSAA parcel identifiers.
+    geometry : shapely.geometry or None
+        The parcel geometry.
+    crs_int : int
+        EPSG code for the coordinate reference system.
+
+    Examples
+    --------
+    >>> parcel = Parcel("2023/12345/1", parcelwfs_id="FI")
+    >>> parcel.get_parcel_geometry()
+    """
+
     def __init__(
         self,
         parcel_id: str,
@@ -57,6 +125,26 @@ class Parcel:
     def validate_parcelwfs_input(
         parcelwfs_id: str | None, wfs: parcelwfs.ParcelWFS | None
     ):
+        """
+        Validate and return a ParcelWFS instance from either an ID or direct instance.
+
+        Parameters
+        ----------
+        parcelwfs_id : str or None
+            Country code identifier to load ParcelWFS configuration.
+        wfs : parcelwfs.ParcelWFS or None
+            Pre-configured ParcelWFS instance.
+
+        Returns
+        -------
+        parcelwfs.ParcelWFS
+            The validated ParcelWFS instance.
+
+        Raises
+        ------
+        ValueError
+            If both parameters are None or both are provided.
+        """
         if parcelwfs_id is None and wfs is None:
             err_msg = "Either parcelwfs_id or parcelwfs must be given"
             logger.error(err_msg)
@@ -74,6 +162,21 @@ class Parcel:
     def get_parcels_from_wfs_gdf(
         cls, gdf: gpd.GeoDataFrame, wfs: parcelwfs.ParcelWFS
     ) -> list["Parcel"]:
+        """
+        Create a list of Parcel instances from a GeoDataFrame.
+
+        Parameters
+        ----------
+        gdf : gpd.GeoDataFrame
+            GeoDataFrame containing parcel data with 'parcel_id' column.
+        wfs : parcelwfs.ParcelWFS
+            ParcelWFS instance to associate with the parcels.
+
+        Returns
+        -------
+        list[Parcel]
+            List of Parcel instances created from the GeoDataFrame rows.
+        """
         parcels = []
         for _, gsaa_parcel in gdf.iterrows():
             parcel = cls(gsaa_parcel.parcel_id, wfs=wfs)
@@ -90,6 +193,27 @@ class Parcel:
         wfs: parcelwfs.ParcelWFS | None = None,
         crs_int: int = 4326,
     ) -> list["Parcel"]:
+        """
+        Retrieve all GSAA parcels associated with an LPIS parcel ID.
+
+        Parameters
+        ----------
+        lpis_parcel_id : str
+            The LPIS parcel identifier.
+        year : int
+            The year to query.
+        parcelwfs_id : str
+            Country code identifier for ParcelWFS configuration.
+        wfs : parcelwfs.ParcelWFS, optional
+            Pre-configured ParcelWFS instance.
+        crs_int : int, default=4326
+            EPSG code for output coordinate reference system.
+
+        Returns
+        -------
+        list[Parcel]
+            List of GSAA Parcel instances for the given LPIS parcel.
+        """
         wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
 
         gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(
@@ -110,6 +234,34 @@ class Parcel:
         min_width: float | None = None,
         crs_int: int = 4326,
     ) -> list["Parcel"]:
+        """
+        Retrieve GSAA parcels with small parcels merged based on area/width criteria.
+
+        Small parcels (below thresholds) are merged with adjacent parcels to create
+        more manageable parcel units.
+
+        Parameters
+        ----------
+        lpis_parcel_id : str
+            The LPIS parcel identifier.
+        year : int
+            The year to query.
+        parcelwfs_id : str, optional
+            Country code identifier for ParcelWFS configuration.
+        wfs : parcelwfs.ParcelWFS, optional
+            Pre-configured ParcelWFS instance.
+        min_area : float, optional
+            Minimum area threshold in hectares. Parcels below this are merged.
+        min_width : float, optional
+            Minimum width threshold in meters. Parcels below this are merged.
+        crs_int : int, default=4326
+            EPSG code for output coordinate reference system.
+
+        Returns
+        -------
+        list[Parcel]
+            List of Parcel instances with small parcels merged.
+        """
         wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
         gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(lpis_parcel_id, year)
 
@@ -123,6 +275,19 @@ class Parcel:
 
     @staticmethod
     def extract_lpis_and_gsaa_from_parcel_id(parcel_id: str):
+        """
+        Extract LPIS and GSAA parcel components from a full parcel ID.
+
+        Parameters
+        ----------
+        parcel_id : str
+            Full parcel ID in format: year/lpis_id/gsaa_name(s).
+
+        Returns
+        -------
+        tuple[str, list]
+            Tuple of (lpis_parcel_id, list of gsaa_parcel_names).
+        """
         parcels_str = parcel_id.split(PARCEL_SEP)
         lpis_parcel = parcels_str[1]
         gsaa_parcel_names = parcels_str[2:] if len(parcels_str) > 1 else []
@@ -131,6 +296,12 @@ class Parcel:
         return lpis_parcel, gsaa_parcel_names
 
     def get_parcel_geometry(self):
+        """
+        Fetch and set the parcel geometry from the WFS service.
+
+        For LPIS-only parcels, retrieves the LPIS geometry. For GSAA parcels,
+        retrieves all GSAA parcel geometries and unions them into a single geometry.
+        """
         if not self.gsaa_parcel_ids:
             self.geometry = self.wfs.get_lpis_parcel_by_id(
                 self.lpis_parcel_id, self.year, output_crs=self.crs_int
@@ -150,6 +321,32 @@ class Parcel:
         gdf_merged: gpd.GeoDataFrame,
         gdf_original: Optional[gpd.GeoDataFrame] = None,
     ):
+        """
+        Add parcel_id column to a GeoDataFrame based on WFS property mappings.
+
+        Creates parcel IDs in format: year/lpis_id/gsaa_name(s). For merged parcels,
+        includes all original GSAA parcel names separated by '/'.
+
+        Parameters
+        ----------
+        wfs : parcelwfs.ParcelWFS
+            ParcelWFS instance with property mappings.
+        gdf_merged : gpd.GeoDataFrame
+            GeoDataFrame to add parcel_id column to.
+        gdf_original : gpd.GeoDataFrame, optional
+            Original GeoDataFrame before merging, required if gdf_merged contains
+            merged geometries.
+
+        Returns
+        -------
+        gpd.GeoDataFrame
+            Input GeoDataFrame with added 'parcel_id' column.
+
+        Raises
+        ------
+        ValueError
+            If gdf_original is None when merged geometries are present.
+        """
         parcel_ids = []
         gsaa_properties = wfs.gsaa_properties
 
@@ -189,10 +386,41 @@ class Parcel:
 
 
 def keep_equal_values(x):
+    """
+    Return the mode value if all values are equal, otherwise None.
+
+    Used as an aggregation function when dissolving geometries.
+
+    Parameters
+    ----------
+    x : array-like
+        Values to aggregate.
+
+    Returns
+    -------
+    value or None
+        The common value if all values are equal, otherwise None.
+    """
     return x.mode()[0] if x.nunique() == 1 else None
 
 
 def merge_to_single_parts(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Dissolve and explode geometries to create single-part geometries.
+
+    Dissolves all geometries together, then explodes any MultiPolygons into
+    separate single Polygon features.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input GeoDataFrame with geometries to merge.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame with dissolved and exploded single-part geometries.
+    """
     gdf_union = gdf.dissolve(aggfunc=keep_equal_values)
     gdf_single_parts = gdf_union.explode(index_parts=False).reset_index(drop=True)
     return gdf_single_parts
@@ -201,6 +429,26 @@ def merge_to_single_parts(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def merge_by_shortest_boundary(
     candidate: pd.Series, targets: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
+    """
+    Merge a candidate parcel with a target parcel that results in shortest boundary.
+
+    Attempts to merge the candidate with each target. Returns updated targets
+    where the candidate is merged with the target that produces the shortest
+    perimeter after merging.
+
+    Parameters
+    ----------
+    candidate : pd.Series
+        Parcel to merge (must have 'geometry' attribute).
+    targets : gpd.GeoDataFrame
+        Candidate target parcels for merging.
+
+    Returns
+    -------
+    gpd.GeoDataFrame or None
+        Updated targets with candidate merged into the best match, or None if
+        no valid merge is possible (all merges result in MultiPolygons).
+    """
     new_targets = targets.copy(deep=True)
     merged_geometries = new_targets.geometry.apply(
         lambda x: shapely.union(candidate.geometry, x)
@@ -223,6 +471,25 @@ def merge_by_shortest_boundary(
 def merge_by_longest_intersection(
     candidate: pd.Series, targets: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
+    """
+    Merge a candidate parcel with the target that has the longest shared boundary.
+
+    Attempts to merge the candidate with the target that shares the longest
+    intersection line.
+
+    Parameters
+    ----------
+    candidate : pd.Series
+        Parcel to merge (must have 'geometry' attribute).
+    targets : gpd.GeoDataFrame
+        Candidate target parcels for merging.
+
+    Returns
+    -------
+    gpd.GeoDataFrame or None
+        Updated targets with candidate merged into the best match, or None if
+        no valid intersection exists.
+    """
     new_targets = targets.copy(deep=True)
     intersections = new_targets.geometry.apply(
         lambda x: shapely.intersection(candidate.geometry, x)
@@ -352,6 +619,41 @@ def merge_geometries(
     min_width: Optional[float] = None,
     merging_criteria: Optional[MergingCriteria] = MergingCriteria.SHORTEST_BOUNDARY,
 ) -> gpd.GeoDataFrame:
+    """
+    Merge small parcels based on area and/or width thresholds.
+
+    Small parcels (below min_area in hectares or min_width in meters) are
+    iteratively merged with adjacent larger parcels. The merging strategy
+    is determined by the merging_criteria parameter.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input GeoDataFrame with parcel geometries to process.
+    min_area : float, optional
+        Minimum area threshold in hectares. Parcels below this are candidates
+        for merging.
+    min_width : float, optional
+        Minimum width threshold in meters. Parcels narrower than this are
+        candidates for merging.
+    merging_criteria : MergingCriteria, default=SHORTEST_BOUNDARY
+        Strategy for selecting which parcels to merge together.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame with small parcels merged. Contains 'merged_geometries'
+        column indicating which original parcels were merged.
+
+    Raises
+    ------
+    ValueError
+        If both min_area and min_width are None.
+
+    Notes
+    -----
+    At least one of min_area or min_width must be specified.
+    """
     if min_area is None and min_width is None:
         err_msg = "Either min_area or min_width must be given"
         logger.error(err_msg)
