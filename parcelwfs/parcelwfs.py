@@ -31,16 +31,6 @@ logger = logging.getLogger(__name__)
 
 PARCEL_SEP = "/"
 
-# FINNISH_FOOD_AUTHORITY_WFS = "https://inspire.ruokavirasto-awsa.com/geoserver/wfs"
-# AGRICULTURAL_PARCEL_LAYER_BASENAME = (
-#     "inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel."
-# )
-
-
-# class WFSLayer(StrEnum):
-#     AGRICULTURAL_PARCEL = "inspire:LandUse.ExistingLandUse.GSAAAgriculturalParcel"
-#     REFERENCE_PARCEL = "inspire:LC.LandCoverSurfaces.LPIS"
-
 
 class ParcelType(StrEnum):
     GSAA = "gsaa"
@@ -81,27 +71,6 @@ class LPISPropertyMapping(BaseModel):
     lpis_parcel_id: str
     area: str
     geometry: str
-
-
-# class AgriParcelProperty(StrEnum):
-#     ID = "id"
-#     YEAR = "VUOSI"
-#     REFERENCE_PARCEL_ID = "PERUSLOHKOTUNNUS"
-#     SPECIES_CODE = "KASVIKOODI"
-#     SPECIES_DESCRIPTION = "KASVIKOODI_SELITE_FI"
-#     AREA = "PINTA_ALA"
-#     PARCEL_NUMBER = "LOHKONUMERO"
-
-
-# class ReferenceParcelProperty(StrEnum):
-#     ID = "id"
-#     YEAR = "VUOSI"
-#     REFERENCE_PARCEL_ID = "PERUSLOHKOTUNNUS"
-#     ORGANIC_FARMING = "LUOMUVILJELY"
-#     SLOPED_AREA = "KALTEVA_ALA"
-#     GROUNDWATER_AREA = "POHJAVESI_ALA"
-#     NATURA_AREA = "NATURA_ALA"
-#     AREA = "PINTA_ALA"
 
 
 class ParcelWFS(BaseModel):

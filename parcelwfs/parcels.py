@@ -15,9 +15,10 @@ except ImportError:
         pass
 
 
+from typing import Optional
+
 logger = logging.getLogger(__name__)
 
-from typing import Optional
 
 MERGED_GEOM_PROPERTY = "merged_geometries"
 
