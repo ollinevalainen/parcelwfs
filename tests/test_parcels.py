@@ -1,29 +1,34 @@
-from ruokavirasto_wfs.parcels import Parcel, PARCEL_SEP
+from parcelwfs.parcels import Parcel, PARCEL_SEP
 
 qvidja_ec_reference_parcel_id = "5730455963"
-qvidja_ec_parcel_id = f"2022-{qvidja_ec_reference_parcel_id}"
+qvidja_ec_parcel_id = f"2022/{qvidja_ec_reference_parcel_id}"
+parcelwfs_id = "FI"
 
 
 class TestParcel:
     def test_parcel_init(self):
-        parcel = Parcel(qvidja_ec_parcel_id)
+        parcel = Parcel(qvidja_ec_parcel_id, parcelwfs_id=parcelwfs_id)
         assert parcel is not None
 
-    def test_get_parcels_from_reference_parcel_id(self):
-        parcels = Parcel.get_parcels_from_reference_parcel_id(
-            qvidja_ec_reference_parcel_id, 2022
+    def test_get_gsaa_parcels_by_lpis_parcel_id(self):
+        parcels = Parcel.get_gsaa_parcels_by_lpis_parcel_id(
+            qvidja_ec_reference_parcel_id, 2022, parcelwfs_id=parcelwfs_id
         )
         assert len(parcels) >= 1
 
     def test_get_merged_parcels_from_referennce_parcel_id_qvidja(self):
-        parcels = Parcel.get_merged_parcels_from_referennce_parcel_id(
-            qvidja_ec_reference_parcel_id, 2022, min_area=0.5, min_width=20
+        parcels = Parcel.get_merged_gsaa_parcels_from_lpis_parcel_id(
+            qvidja_ec_reference_parcel_id,
+            2022,
+            parcelwfs_id=parcelwfs_id,
+            min_area=0.5,
+            min_width=20,
         )
         assert len(parcels) == 1
 
     def test_get_merged_parcels_from_referennce_parcel_id_granular_parcel(self):
-        parcels = Parcel.get_merged_parcels_from_referennce_parcel_id(
-            "0860442742", 2023, min_area=0.5, min_width=20
+        parcels = Parcel.get_merged_gsaa_parcels_from_lpis_parcel_id(
+            "0860442742", 2023, parcelwfs_id=parcelwfs_id, min_area=0.5, min_width=20
         )
         assert len(parcels) > 1
 
@@ -37,7 +42,7 @@ class TestParcel:
             + PARCEL_SEP
             + "2"
         )
-        ref_parcel, agri_parcels = Parcel.extract_parcels_from_parcel_id(
+        ref_parcel, agri_parcels = Parcel.extract_lpis_and_gsaa_from_parcel_id(
             id_with_agri_parcels
         )
         assert ref_parcel == qvidja_ec_reference_parcel_id

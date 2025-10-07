@@ -86,7 +86,7 @@ class Parcel:
         lpis_parcel_id: str,
         year: int,
         parcelwfs_id: str,
-        wfs: parcelwfs.ParcelWFS,
+        wfs: parcelwfs.ParcelWFS | None = None,
         crs_int: int = 4326,
     ) -> list["Parcel"]:
         wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
