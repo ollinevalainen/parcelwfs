@@ -67,7 +67,7 @@ from owslib.wfs import WebFeatureService
 
 logger = logging.getLogger(__name__)
 
-PARCEL_SEP = "/"
+PARCEL_SEP = "_"
 
 
 class ParcelType(StrEnum):
