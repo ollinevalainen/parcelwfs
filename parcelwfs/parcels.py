@@ -263,15 +263,43 @@ class Parcel:
             List of Parcel instances with small parcels merged.
         """
         wfs = cls.validate_parcelwfs_input(parcelwfs_id, wfs)
+        # gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(lpis_parcel_id, year)
+
+        # gdf_merged_gsaa = merge_geometries(
+        #     gdf_gsaa_parcels, min_area=min_area, min_width=min_width
+        # ).to_crs(epsg=crs_int)
+
+        # gdf_merged_gsaa = cls.add_parcel_id(wfs, gdf_merged_gsaa, gdf_gsaa_parcels)
+        gdf_merged_gsaa = cls.get_merged_gsaa_dataframe_from_lpis_id(
+            lpis_parcel_id,
+            year,
+            wfs=wfs,
+            min_area=min_area,
+            min_width=min_width,
+            crs_int=crs_int,
+        )
+        merged_gsaa_parcels = cls.get_parcels_from_wfs_gdf(gdf_merged_gsaa, wfs)
+        return merged_gsaa_parcels
+
+    @staticmethod
+    def get_merged_gsaa_dataframe_from_lpis_id(
+        lpis_parcel_id: str,
+        year: int,
+        parcelwfs_id: str | None = None,
+        wfs: parcelwfs.ParcelWFS | None = None,
+        min_area: float | None = None,
+        min_width: float | None = None,
+        crs_int: int = 4326,
+    ) -> gpd.GeoDataFrame:
+        wfs = Parcel.validate_parcelwfs_input(parcelwfs_id, wfs)
         gdf_gsaa_parcels = wfs.get_gsaa_parcels_by_lpis_parcel_id(lpis_parcel_id, year)
 
         gdf_merged_gsaa = merge_geometries(
             gdf_gsaa_parcels, min_area=min_area, min_width=min_width
         ).to_crs(epsg=crs_int)
 
-        gdf_merged_gsaa = cls.add_parcel_id(wfs, gdf_merged_gsaa, gdf_gsaa_parcels)
-        merged_gsaa_parcels = cls.get_parcels_from_wfs_gdf(gdf_merged_gsaa, wfs)
-        return merged_gsaa_parcels
+        gdf_merged_gsaa = Parcel.add_parcel_id(wfs, gdf_merged_gsaa, gdf_gsaa_parcels)
+        return gdf_merged_gsaa
 
     @staticmethod
     def extract_lpis_and_gsaa_from_parcel_id(parcel_id: str):
@@ -629,7 +657,8 @@ def merge_geometries(
     Parameters
     ----------
     gdf : gpd.GeoDataFrame
-        Input GeoDataFrame with parcel geometries to process.
+        Input GeoDataFrame with parcel geometries to process. The GeoDataFrame must have
+        projected CRS for accurate area and width calculations.
     min_area : float, optional
         Minimum area threshold in hectares. Parcels below this are candidates
         for merging.
@@ -654,6 +683,10 @@ def merge_geometries(
     -----
     At least one of min_area or min_width must be specified.
     """
+    if gdf.crs.is_projected is False:
+        logger.warning(
+            "Input GeoDataFrame is not in a projected CRS. Area and width calculations may be inaccurate."
+        )
     if min_area is None and min_width is None:
         err_msg = "Either min_area or min_width must be given"
         logger.error(err_msg)
@@ -694,3 +727,103 @@ def merge_geometries(
     if not gdf_lt.empty:
         logger.info(f"These geometries are still less than threshold:{gdf_lt.index}")
     return gdf_updated
+
+
+def get_parcel_history(
+    gdf_reference: gpd.GeoDataFrame,
+    gdf_compared: gpd.GeoDataFrame,
+    reference_id_col: str,
+    reference_year: int,
+    compared_id_col: str,
+    compared_year_col: str,
+    min_overlap_fraction: float = 0.01,
+    number_of_decimal_places: int = 2,
+):
+    """Get the history of parcel overlaps between a reference and compared GeoDataFrame.
+    For each parcel in the reference GeoDataFrame, identifies overlapping parcels in the
+    compared GeoDataFrame for each year, and calculates overlap statistics.
+
+    Parameters
+    ----------
+    gdf_reference : gpd.GeoDataFrame
+        GeoDataFrame containing the reference parcels to analyze.
+    gdf_compared : gpd.GeoDataFrame
+        GeoDataFrame containing the parcels to compare against the reference.
+    reference_id_col : str
+        Column name in gdf_reference that contains the unique parcel identifier.
+    reference_year : int
+        Year associated with the reference parcels (used for reporting).
+    compared_id_col : str
+        Column name in gdf_compared that contains the unique parcel identifier.
+    compared_year_col : str
+        Column name in gdf_compared that contains the year of the parcel (used to group by year).
+    min_overlap_fraction : float, default=0.01
+        Minimum fraction of the reference parcel's area that must be overlapped by a compared
+        parcel to be considered a match (e.g., 0.01 for 1% overlap).
+    number_of_decimal_places : int, default=2
+        Number of decimal places to round area and percentage values in the output.
+
+    Returns
+    -------
+    dict
+        A dictionary where each key is a reference parcel ID, and the value is another
+        dictionary containing the reference parcel's information and a history of overlapping parcels
+        for each year in the compared GeoDataFrame. The history includes the source parcel ID,
+        overlap area in hectares, source area in hectares, and percentage coverage of both
+        the reference and source parcels.
+
+    """
+    parcel_overlap_history = {}
+
+    for ref_parcel in gdf_reference.itertuples():
+        ref_parcel_history_dict = {}
+        ref_parcel_history_dict["reference_parcel"] = getattr(
+            ref_parcel, reference_id_col
+        )
+        ref_parcel_history_dict["reference_year"] = reference_year
+        ref_parcel_history_dict["reference_area_ha"] = round(
+            ref_parcel.geometry.area / 10000, number_of_decimal_places
+        )
+        ref_parcel_history_dict["history"] = {}
+
+        ref_parcel_id = getattr(ref_parcel, reference_id_col)
+        ref_geom = ref_parcel.geometry
+        ref_area = ref_geom.area
+
+        years = gdf_compared[compared_year_col].unique().tolist()
+        for year in years:
+            gdf_compared_parcels_year = gdf_compared[
+                gdf_compared[compared_year_col] == year
+            ]
+            overlapping_parcels = []
+            for compared_parcel in gdf_compared_parcels_year.itertuples():
+                compared_geom = compared_parcel.geometry
+                if ref_geom.intersects(compared_geom):
+                    intersection = ref_geom.intersection(compared_geom)
+                    if intersection.area / ref_area > min_overlap_fraction:
+                        overlapping_parcels.append(
+                            {
+                                "source_parcel": getattr(
+                                    compared_parcel, compared_id_col
+                                ),
+                                "overlap_area_ha": round(
+                                    intersection.area / 10000, number_of_decimal_places
+                                ),
+                                "source_area_ha": round(
+                                    compared_geom.area / 10000, number_of_decimal_places
+                                ),
+                                "ref_coverage_pct": round(
+                                    intersection.area / ref_area * 100,
+                                    number_of_decimal_places,
+                                ),
+                                "src_coverage_pct": round(
+                                    intersection.area / compared_geom.area * 100,
+                                    number_of_decimal_places,
+                                ),
+                            }
+                        )
+            if overlapping_parcels:
+                ref_parcel_history_dict["history"][year] = overlapping_parcels
+
+        parcel_overlap_history[ref_parcel_id] = ref_parcel_history_dict
+    return parcel_overlap_history

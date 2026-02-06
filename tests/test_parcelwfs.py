@@ -2,7 +2,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 import parcelwfs
-
+from parcelwfs.parcelwfs import PARCEL_SEP
 
 fi_country = "FI"
 fi_polygon = Polygon(
@@ -33,7 +33,7 @@ fi_polygon = Polygon(
 )
 fi_year = 2023
 fi_lpis_parcel_id_2023 = "5730455963"
-fi_gsaa_parcel_id_2023 = "5730455963/2"
+fi_gsaa_parcel_id_2023 = f"5730455963{PARCEL_SEP}2"
 fi_lat = fi_polygon.centroid.y
 fi_lon = fi_polygon.centroid.x
 
@@ -41,7 +41,7 @@ dk_code = "DK"
 dk_year = 2024
 dk_polygon = None
 dk_lpis_parcel_id = "725173-38"
-dk_gsaa_parcel_id = "725173-38/1-0"
+dk_gsaa_parcel_id = f"725173-38{PARCEL_SEP}1-0"
 dk_lat = 55.65707964
 dk_lon = 12.58154275
 
